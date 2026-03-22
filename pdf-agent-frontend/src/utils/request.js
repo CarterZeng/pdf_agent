@@ -1,45 +1,150 @@
-import axios from 'axios'
+// API 基础 URL 配置
+const API_BASE_URL = process.env.VUE_APP_API_URL || 'http://localhost:8000'
 
-// 创建axios实例
-const service = axios.create({
-  baseURL: '/api',  // 对应vite的proxy配置
-  timeout: 60000,   // PDF处理超时时间设为60秒
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// 请求拦截器
-service.interceptors.request.use(
-  config => {
-    return config
-  },
-  error => {
-    console.error('Request error:', error)
-    return Promise.reject(error)
-  }
-)
-
-// 响应拦截器
-service.interceptors.response.use(
-  response => {
-    return response.data
-  },
-  error => {
-    console.error('Response error:', error)
-    ElMessage.error(error.response?.data?.detail || '请求失败，请重试')
-    return Promise.reject(error)
-  }
-)
-
-// 封装接口方法
+/**
+ * API 客户端 - 处理所有后端通信
+ */
 export const api = {
-  // 发送聊天请求
-  chat(prompt) {
-    return service.post('/chat', { prompt })
+  /**
+   * 发送聊天请求
+   * @param {string} prompt - 用户问题
+   * @returns {Promise<Object>} 返回回答、RAG结果等
+   */
+  async chat(prompt) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt }),
+      })
+
+      // ⚠️ 关键错误处理
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `API Error: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Chat API Error:', error)
+      throw error
+    }
   },
-  // 重新建立PDF索引
-  reindex() {
-    return service.post('/reindex')
-  }
+
+  /**
+   * 重新构建 PDF 索引
+   * @returns {Promise<Object>} 返回成功消息
+   */
+  async reindex() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/reindex`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `API Error: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Reindex API Error:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 获取系统健康状态
+   * @returns {Promise<Object>} 返回健康检查信息
+   */
+  async health() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Health check failed: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Health Check Error:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 清空聊天历史
+   * @returns {Promise<Object>} 返回成功消息
+   */
+  async clearHistory() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/clear-history`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `API Error: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Clear History Error:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 获取聊天历史
+   * @returns {Promise<Object>} 返回历史记录
+   */
+  async getHistory() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/history`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `API Error: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Get History Error:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 设置 API 基础 URL
+   * @param {string} url - 新的 API URL
+   */
+  setBaseURL(url) {
+    API_BASE_URL = url
+  },
+
+  /**
+   * 获取当前 API 基础 URL
+   * @returns {string} API 基础 URL
+   */
+  getBaseURL() {
+    return API_BASE_URL
+  },
 }

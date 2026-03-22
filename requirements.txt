@@ -1,0 +1,22 @@
+# Web框架
+fastapi==0.104.1
+uvicorn==0.24.0.post1
+
+# PDF处理
+PyPDF2==3.0.1
+
+# 嵌入/检索（核心依赖，适配Torch 2.2.2）
+torch==2.2.2
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+
+# LLM相关（无冲突版本）
+langchain-core==0.1.46
+langchain-openai==0.1.7
+langchain-text-splitters==0.0.1
+langchain-community==0.0.28
+
+# 基础依赖
+pydantic==2.4.2
+python-dotenv==1.0.0
+typing-extensions>=4.8.0
