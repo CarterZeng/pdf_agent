@@ -1,16 +1,24 @@
+import hashlib
+import json
 import os
 import re
-from typing import List
+import shutil
+import threading
+import time
+from typing import Any, Dict, List
+
 from PyPDF2 import PdfReader
 from sentence_transformers import SentenceTransformer
 from langchain_openai import ChatOpenAI
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+from text_cleaner import clean_for_index, clean_for_output
 
 
-# --- 嵌入模型包装类 ---
 class SentenceTransformerEmbeddings(Embeddings):
     def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5"):
         self.model = SentenceTransformer(model_name)
@@ -21,210 +29,399 @@ class SentenceTransformerEmbeddings(Embeddings):
         return embeddings.tolist()
 
     def embed_query(self, text: str) -> List[float]:
-        text = "query: " + text
-        embedding = self.model.encode([text], normalize_embeddings=True)
+        embedding = self.model.encode(["query: " + text], normalize_embeddings=True)
         return embedding[0].tolist()
 
 
-# --- RAG 核心类 ---
+def is_comparison_query(query: str) -> bool:
+    q = query.lower()
+    keywords = [
+        "compare", "comparison", "difference", "different",
+        "similarity", "similarities", "contrast",
+        "between the two papers", "both papers", "two papers",
+    ]
+    return any(k in q for k in keywords)
+
+
+def rewrite_query_for_retrieval(query: str) -> str:
+    q = query.lower()
+
+    if any(x in q for x in ["table", "figure", "fig.", "fig ", "chart"]):
+        return query + " table figure fig results experiment caption"
+
+    if any(x in q for x in ["method", "approach", "propose", "proposed"]):
+        return query + " proposed method approach strategy objective pipeline filtering blacklist whitelist labeling n-gram"
+
+    if any(x in q for x in ["evaluation", "evaluate", "metric", "precision", "recall", "result", "results"]):
+        return query + " evaluation metric precision recall experiment test relevance result"
+
+    if any(x in q for x in ["dataset", "data", "corpus"]):
+        return query + " dataset corpus data source benchmark training test set"
+
+    if any(x in q for x in ["contribution", "main idea", "summary"]):
+        return query + " contribution objective main idea proposed approach"
+
+    return query
+
+
+def should_force_single_source(query: str) -> bool:
+    if is_comparison_query(query):
+        return False
+
+    q = query.lower()
+    triggers = [
+        "the paper", "this paper", "the study", "this study",
+        "the article", "this article",
+    ]
+    return any(t in q for t in triggers)
+
+
+def get_distinct_sources(docs):
+    sources = []
+    for d in docs:
+        src = d.metadata.get("source")
+        if src and src not in sources:
+            sources.append(src)
+    return sources
+
+
+def filter_docs_for_question(docs, question: str):
+    q = question.lower()
+
+    if any(x in q for x in ["method", "approach", "propose", "proposed"]):
+        bad_words = [
+            "precision", "recall", "evaluation",
+            "high relevancy", "medium relevancy", "low relevancy",
+            "table", "dissemination",
+        ]
+        filtered = []
+        for d in docs:
+            text = d.page_content.lower()
+            bad_hits = sum(1 for w in bad_words if w in text)
+            if bad_hits >= 2:
+                continue
+            filtered.append(d)
+        return filtered if filtered else docs
+
+    return docs
+
+
+def rerank_docs_by_question(docs, question: str):
+    q = question.lower()
+
+    if any(x in q for x in ["table", "figure", "fig.", "fig ", "chart"]):
+        keywords = ["table", "figure", "fig", "result", "caption", "experiment"]
+    elif any(x in q for x in ["method", "approach", "propose", "proposed"]):
+        keywords = [
+            "propose", "proposed", "method", "approach", "strategy",
+            "objective", "pipeline", "blacklist", "whitelist",
+            "filtering", "labeling", "n-gram",
+        ]
+    elif any(x in q for x in ["evaluation", "evaluate", "metric", "precision", "result", "results"]):
+        keywords = ["precision", "recall", "evaluation", "metric", "experiment", "relevance", "result"]
+    elif any(x in q for x in ["dataset", "data", "corpus"]):
+        keywords = ["dataset", "data", "corpus", "training", "test"]
+    elif any(x in q for x in ["contribution", "main idea", "summary"]):
+        keywords = ["contribution", "objective", "proposed", "approach", "study", "paper"]
+    else:
+        keywords = []
+
+    scored = []
+    for d in docs:
+        text = d.page_content.lower()
+        score = sum(1 for kw in keywords if kw in text)
+        scored.append((score, d))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in scored]
+
+
 class PdfRAGAgent:
     def __init__(
-            self,
-            model_name: str = "BAAI/bge-base-en-v1.5",
-            temperature: float = 0,
-            pdfs_folder: str = "./pdfs"
+        self,
+        model_name: str = "BAAI/bge-base-en-v1.5",
+        temperature: float = 0,
+        pdfs_folder: str = "./pdfs",
     ):
         self.pdfs_folder = pdfs_folder
         self.abstract_path = "faiss_abstract"
         self.fulltext_path = "faiss_full"
+        self.index_cache_path = "index_cache.json"
+        self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        self.openrouter_timeout = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60"))
+        self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "420"))
 
         self.embeddings = SentenceTransformerEmbeddings(model_name)
         self.llm = ChatOpenAI(
-            model="openai/gpt-oss-120b",
+            model=self.openrouter_model,
             base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("LEO_API_KEY"),
-            temperature=temperature
+            api_key="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",
+            temperature=temperature,
+            timeout=self.openrouter_timeout,
+            max_tokens=self.openrouter_max_tokens,
+            max_retries=1,
         )
 
-        # 存储对话历史，使用 LangChain 的消息对象
         self.chat_history = []
-
+        self.index_lock = threading.Lock()
+        self.index_status = "ready" if self.index_exists() else "missing"
+        self.index_error = None
+        self.index_started_at = None
+        self.index_finished_at = time.time() if self.index_exists() else None
+        self.index_duration_seconds = 0 if self.index_exists() else None
+        self.indexed_pdf_count = 0
 
     def extract_abstract(self, text: str) -> str | None:
         pattern = r"Abstract(.*?)(Introduction|1\.|I\.)"
         match = re.search(pattern, text, re.S | re.I)
         return match.group(1).strip() if match else None
 
-    def load_pdfs_from_folder(self, folder_path: str) -> List[str]:
-        return [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith(".pdf")]
+    def get_pdf_signature(self, path: str) -> str:
+        stat = os.stat(path)
+        signature = f"{os.path.basename(path)}:{stat.st_size}:{stat.st_mtime_ns}"
+        return hashlib.sha256(signature.encode("utf-8")).hexdigest()
 
-    def extract_pdf_text(self, pdf_path: str) -> str:
-        text = ""
-        reader = PdfReader(pdf_path)
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text: text += page_text + "\n"
-        return text
+    def load_index_cache(self) -> dict:
+        if not os.path.exists(self.index_cache_path):
+            return {}
+        try:
+            with open(self.index_cache_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return {}
 
-    def split_text(self, text: str) -> List[str]:
+    def save_index_cache(self, cache: dict) -> None:
+        with open(self.index_cache_path, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, ensure_ascii=True)
+
+    def parse_pdf_documents(self, file: str) -> dict:
+        path = os.path.join(self.pdfs_folder, file)
+        reader = PdfReader(path)
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=100, separators=["\n\n", "\n", ".", " ", ""]
+            chunk_size=1000,
+            chunk_overlap=100,
+            separators=["\n\n", "\n", ".", " ", ""],
         )
-        return splitter.split_text(text)
 
-    def load_abstract_store(self):
-        return FAISS.load_local(self.abstract_path, self.embeddings, allow_dangerous_deserialization=True)
+        cover_text = "\n".join([p.extract_text() or "" for p in reader.pages[:2]])
+        cover_text = clean_for_index(cover_text)
 
-    def load_fulltext_store(self):
-        return FAISS.load_local(self.fulltext_path, self.embeddings, allow_dangerous_deserialization=True)
+        abstract_docs = []
+        abstract = self.extract_abstract(cover_text)
+        if abstract:
+            abstract = clean_for_index(abstract)
+            if abstract.strip():
+                abstract_docs.append({
+                    "page_content": abstract,
+                    "metadata": {"source": file, "page": 1},
+                })
+
+        full_docs = []
+        for i, page in enumerate(reader.pages):
+            page_text = page.extract_text()
+            if not page_text:
+                continue
+
+            page_text = clean_for_index(page_text)
+            if not page_text.strip():
+                continue
+
+            chunks = splitter.split_text(page_text)
+            for chunk in chunks:
+                chunk = clean_for_index(chunk)
+                if chunk.strip():
+                    full_docs.append({
+                        "page_content": chunk,
+                        "metadata": {"source": file, "page": i + 1},
+                    })
+
+        return {
+            "signature": self.get_pdf_signature(path),
+            "abstract_docs": abstract_docs,
+            "full_docs": full_docs,
+        }
 
     def build_vector_store_from_pdfs(self):
-        pdf_paths = self.load_pdfs_from_folder(self.pdfs_folder)
-        abstract_texts, abstract_metadatas = [], []
-        full_texts, full_metadatas = [], []
+        if not os.path.exists(self.pdfs_folder):
+            os.makedirs(self.pdfs_folder)
 
-        for pdf_path in pdf_paths:
-            print(f"Processing: {pdf_path}")
-            text = self.extract_pdf_text(pdf_path)
-            filename = os.path.basename(pdf_path)
+        pdf_files = sorted(f for f in os.listdir(self.pdfs_folder) if f.endswith(".pdf"))
+        existing_cache = self.load_index_cache()
+        next_cache = {}
+        all_abstract_docs = []
+        all_full_chunks = []
 
-            abstract = self.extract_abstract(text)
-            if abstract:
-                abstract_texts.append(abstract)
-                abstract_metadatas.append({"source": filename})
+        for file in pdf_files:
+            path = os.path.join(self.pdfs_folder, file)
+            signature = self.get_pdf_signature(path)
+            cached = existing_cache.get(file)
 
-            chunks = self.split_text(text)
-            for chunk in chunks:
-                full_texts.append(chunk)
-                full_metadatas.append({"source": filename})
+            if cached and cached.get("signature") == signature:
+                parsed = cached
+            else:
+                parsed = self.parse_pdf_documents(file)
 
-        FAISS.from_texts(abstract_texts, self.embeddings, metadatas=abstract_metadatas).save_local(self.abstract_path)
-        FAISS.from_texts(full_texts, self.embeddings, metadatas=full_metadatas).save_local(self.fulltext_path)
-        print("Indexes built.")
+            next_cache[file] = parsed
+            all_abstract_docs.extend(
+                Document(page_content=doc["page_content"], metadata=doc["metadata"])
+                for doc in parsed.get("abstract_docs", [])
+            )
+            all_full_chunks.extend(
+                Document(page_content=doc["page_content"], metadata=doc["metadata"])
+                for doc in parsed.get("full_docs", [])
+            )
 
-    def hierarchical_retrieve(self, query: str):
-        abstract_store = self.load_abstract_store()
-        full_store = self.load_fulltext_store()
+        for path in [self.abstract_path, self.fulltext_path]:
+            if os.path.exists(path):
+                shutil.rmtree(path)
 
-        # 阶段 1: 检索摘要
-        abstract_docs = abstract_store.similarity_search(query, k=3)
-        candidate_sources = list(set(doc.metadata["source"] for doc in abstract_docs))
+        if all_abstract_docs:
+            FAISS.from_documents(all_abstract_docs, self.embeddings).save_local(self.abstract_path)
+        if all_full_chunks:
+            FAISS.from_documents(all_full_chunks, self.embeddings).save_local(self.fulltext_path)
 
-        # 阶段 2: 检索全文
-        # 注意：FAISS 的 filter 接收一个 callable。
-        def metadata_filter(metadata):
-            return metadata.get("source") in candidate_sources
+        self.save_index_cache(next_cache)
+        self.indexed_pdf_count = len(pdf_files)
 
-        full_docs = full_store.similarity_search(
-            query,
-            k=5,
-            filter=metadata_filter if candidate_sources else None
+    def index_exists(self) -> bool:
+        return os.path.exists(self.fulltext_path) and os.path.exists(self.abstract_path)
+
+    def ensure_index_ready(self) -> None:
+        if self.index_status == "building":
+            raise RuntimeError("Index is building. Please wait a moment and try again.")
+        if not self.index_exists():
+            detail = self.index_error or "Index not found. Please run /reindex."
+            raise FileNotFoundError(detail)
+
+    def rebuild_index(self) -> None:
+        with self.index_lock:
+            self.index_status = "building"
+            self.index_error = None
+            self.index_started_at = time.time()
+            self.index_finished_at = None
+            self.index_duration_seconds = None
+            try:
+                self.build_vector_store_from_pdfs()
+            except Exception as exc:
+                self.index_status = "error"
+                self.index_error = f"Index build failed: {exc}"
+                self.index_finished_at = time.time()
+                self.index_duration_seconds = round(self.index_finished_at - self.index_started_at, 2)
+                raise
+            else:
+                self.index_status = "ready"
+                self.index_finished_at = time.time()
+                self.index_duration_seconds = round(self.index_finished_at - self.index_started_at, 2)
+
+    def load_vector_store(self, path: str):
+        try:
+            return FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+        except TypeError:
+            return FAISS.load_local(path, self.embeddings)
+
+    def answer(self, query: str) -> Dict[str, Any]:
+        self.ensure_index_ready()
+        abs_store = self.load_vector_store(self.abstract_path)
+        full_store = self.load_vector_store(self.fulltext_path)
+
+        retrieval_query = rewrite_query_for_retrieval(query)
+        single_source = should_force_single_source(query)
+
+        abs_results = abs_store.similarity_search(
+            retrieval_query,
+            k=1 if single_source else 3,
         )
-        return full_docs
 
-    def get_chat_history_string(self):
-        """将消息对象转换为字符串格式"""
-        buffer = ""
-        for msg in self.chat_history:
-            if isinstance(msg, HumanMessage):
-                buffer += f"User: {msg.content}\n"
-            elif isinstance(msg, AIMessage):
-                buffer += f"Assistant: {msg.content}\n"
-        return buffer
+        candidates = get_distinct_sources(abs_results)
 
-    def answer(self, query: str):
-        # 1. Retrieve relevant document chunks
-        docs = self.hierarchical_retrieve(query)
+        def filter_fn(meta):
+            return meta.get("source") in candidates
 
-        if not docs:
-            return "I'm sorry, but no relevant information was found in the provided documents."
+        docs = full_store.similarity_search(
+            retrieval_query,
+            k=8 if not single_source else 6,
+            filter=filter_fn if candidates else None,
+        )
 
-        # 2. Construct context for the LLM and prepare raw snippets for user display
-        context_blocks = []
-        raw_highlights = []  # To store the original text for the user
+        docs = filter_docs_for_question(docs, query)
+        docs = rerank_docs_by_question(docs, query)
 
+        if single_source:
+            top_source = candidates[0] if candidates else None
+            if top_source:
+                docs = [d for d in docs if d.metadata.get("source") == top_source]
+
+        docs = docs[:4]
+
+        rag_results = []
+        context_list = []
         for i, d in enumerate(docs):
-            ref_id = i + 1
-            # Handling the 'None' page issue by providing a fallback
-            page_val = d.metadata.get('page')
-            page_info = f"Page {page_val}" if page_val else "Abstract/Front Matter"
-            source_info = f"{d.metadata['source']} ({page_info})"
+            src = d.metadata.get("source", "Unknown")
+            pg = d.metadata.get("page", "N/A")
+            content = clean_for_output(d.page_content.strip())
+            context_list.append(f"[Ref {i + 1} | {src} P.{pg}]\n{content}")
+            rag_results.append({
+                "ref_id": i + 1,
+                "source": src,
+                "page": pg,
+                "content": content,
+            })
 
-            # Context passed to the LLM
-            context_blocks.append(f"--- REFERENCE {ref_id} ({source_info}) ---\n{d.page_content}")
+        if single_source:
+            sources = [x["source"] for x in rag_results]
+            if len(set(sources)) > 1:
+                return {
+                    "response": "The query refers to a single paper, but the retrieved context still comes from multiple papers. Please specify the paper title.",
+                    "RAG_RESULT": rag_results,
+                    "chat_history": self.chat_history,
+                }
 
-            # Original text snippets displayed to the user
-            raw_highlights.append(f"【Snippet {ref_id} | Source: {source_info}】\n{d.page_content.strip()}")
+        history_context = "\n".join(self.chat_history)
+        context_text = "\n\n".join(context_list)
 
-        context = "\n\n".join(context_blocks)
+        comparison_rule = ""
+        if is_comparison_query(query):
+            comparison_rule = "This is a comparison question. Organize the answer by paper/source first, then summarize similarities and differences."
 
-        # 3. Construct conversation history string
-        history_str = ""
-        for msg in self.chat_history:
-            role = "User" if isinstance(msg, HumanMessage) else "Assistant"
-            history_str += f"{role}: {msg.content}\n"
+        system_prompt = f"""You are a precise academic research assistant.
 
-        # 4. Construct the System Prompt in English
-        system_prompt = f"""You are a precise academic research assistant. 
-        Answer the user's question based ONLY on the provided RAG context. 
-        Always cite the reference numbers, such as [1] or [2], when mentioning specific facts.
-        If the context does not contain the answer, state that it cannot be determined.
+Answer the user's question based ONLY on the provided context.
 
-        [CONVERSATION HISTORY]
-        {history_str}
+Rules:
+1. Answer only what is asked.
+2. If the question refers to "the paper", "this paper", "the study", or "this study", answer using ONE paper only.
+3. Do NOT combine findings from multiple papers unless the user explicitly asks for comparison.
+4. If the question asks about method/approach, focus on the proposed method or pipeline.
+5. If the question asks about evaluation, focus on metrics, experiments, and results.
+6. If the question asks about dataset/data, focus on the dataset, corpus, or data source.
+7. If this is a comparison question, organize the answer by paper/source first, then summarize similarities and differences.
+8. Every factual sentence should include at least one citation like [1] or [2].
+9. Do not place all citations only at the end of the paragraph.
+10. If the context is insufficient, say so clearly.
 
-        [RAG CONTEXT]
-        {context}
-        """
+{comparison_rule}
 
-        # 5. Invoke the LLM
+[HISTORY]
+{history_context}
+
+[CONTEXT]
+{context_text}
+"""
+
         response = self.llm.invoke([
             SystemMessage(content=system_prompt),
-            HumanMessage(content=query)
+            HumanMessage(content=query),
         ])
 
-        answer_text = response.content
+        cleaned_response = clean_for_output(response.content)
+        self.chat_history.append(f"User: {query}")
+        self.chat_history.append(f"Assistant: {cleaned_response}")
 
-        # 6. Update chat history (Limit to last 10 messages to manage context window)
-        self.chat_history.append(HumanMessage(content=query))
-        self.chat_history.append(AIMessage(content=answer_text))
         if len(self.chat_history) > 10:
             self.chat_history = self.chat_history[-10:]
 
-        # 7. Concatenate final output: AI Answer + Evidence Highlights
-        final_output = (
-                f"### AI Response\n{answer_text}\n\n"
-                f"--- \n"
-                f"### Retrieved Evidence (RAG Content)\n"
-                + "\n\n".join(raw_highlights)
-        )
-
-        return final_output
-
-
-def main():
-    # 确保文件夹存在
-    if not os.path.exists("./pdfs"):
-        os.makedirs("./pdfs")
-
-    agent = PdfRAGAgent()
-
-    # 如果是第一次运行，取消下面注释来建立索引
-    # agent.build_vector_store_from_pdfs()
-
-    print("--- Academic RAG System Ready  ---")
-
-    while True:
-        query = input("\nUser: ")
-        if query.lower() in ["exit", "quit", "退出"]:
-            break
-
-        if not query.strip():
-            continue
-
-        result = agent.answer(query)
-        print(f"\nAssistant: {result}")
-
-
-if __name__ == "__main__":
-    main()
+        return {
+            "response": cleaned_response,
+            "RAG_RESULT": rag_results,
+            "chat_history": self.chat_history,
+        }
