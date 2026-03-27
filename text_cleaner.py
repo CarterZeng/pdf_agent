@@ -69,7 +69,12 @@ def remove_formula_noise(text: str) -> str:
 def clean_ocr_spacing(text: str) -> str:
     if not text:
         return ""
-    text = re.sub(r"(?<=[A-Za-z])\s+(?=[A-Za-z])", " ", text)
+    def join_letter_spaced_word(match: re.Match) -> str:
+        return match.group(0).replace(" ", "")
+
+    # Only fix OCR-style letter-by-letter spacing like "N e u r a l".
+    # Keep normal word boundaries so phrases do not collapse into "approachtoauto".
+    text = re.sub(r"\b(?:[A-Za-z]\s+){2,}[A-Za-z]\b", join_letter_spaced_word, text)
     text = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
     return text
 
@@ -98,8 +103,10 @@ def clean_for_output(text: str) -> str:
     if not text:
         return ""
     text = normalize_unicode(text)
+    text = clean_ocr_spacing(text)
     text = fix_spaced_hyphen_terms(text)
     text = fix_broken_english_words(text)
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -108,20 +115,15 @@ def fix_broken_english_words(text: str) -> str:
     if not text:
         return ""
 
-    prev = None
-    while prev != text:
-        prev = text
-
-        # c ustom -> custom
-        text = re.sub(r"\b([A-Za-z])\s+([a-z]{2,})\b", r"\1\2", text)
-
-        # autom a ting -> automating
-        text = re.sub(r"\b([A-Za-z]{2,})\s+([a-z]{1,2})\s+([a-z]{2,})\b", r"\1\2\3", text)
-
-        # paper s -> papers
-        text = re.sub(r"\b([A-Za-z]{2,})\s+([a-zA-Z])\b", r"\1\2", text)
-
-    return text
+    # Only repair obvious OCR suffix splits like "label ing" -> "labeling".
+    # Avoid joining normal word boundaries such as "a method" or "approach to".
+    suffixes = [
+        "s", "es", "ed", "er", "ers", "ing", "ion", "ions",
+        "ment", "ments", "ness", "less", "ful", "able", "ible",
+        "al", "ally", "ly",
+    ]
+    suffix_pattern = "|".join(suffixes)
+    return re.sub(rf"\b([A-Za-z]{{3,}})\s+({suffix_pattern})\b", r"\1\2", text)
 
 def fix_spaced_hyphen_terms(text: str) -> str:
     if not text:
