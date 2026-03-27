@@ -165,7 +165,6 @@ class PdfRAGAgent:
         self.bundled_openrouter_api_key = "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"
         self.openrouter_api_key = (
             os.getenv("OPENROUTER_API_KEY")
-            or os.getenv("LEO_API_KEY")
             or self.bundled_openrouter_api_key
         )
         self.openrouter_timeout = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60"))

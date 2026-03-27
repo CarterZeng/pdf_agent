@@ -39,7 +39,7 @@ async def chat(request: QueryRequest):
     except AuthenticationError as exc:
         raise HTTPException(
             status_code=502,
-            detail="OpenRouter authentication failed. Please configure a valid OPENROUTER_API_KEY or LEO_API_KEY.",
+            detail="OpenRouter authentication failed. Please configure a valid OPENROUTER_API_KEY.",
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
