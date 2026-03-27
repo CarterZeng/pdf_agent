@@ -3,37 +3,37 @@
     <section class="login-card">
       <div class="card-header">
         <div class="logo-box">
-          <img src="@/assets/school-logo.png" alt="学校 Logo" class="logo-img">
+          <img src="@/assets/school-logo.png" alt="School logo" class="logo-img">
         </div>
         <div>
           <p class="card-eyebrow">PDF Agent</p>
-          <h2>登录研究控制台</h2>
+          <h2>Sign in to the research console</h2>
         </div>
       </div>
 
       <form class="login-form" @submit.prevent="handleLogin">
         <label class="field-group">
-          <span>用户名</span>
+          <span>Username</span>
           <input
             v-model="username"
             type="text"
-            placeholder="输入用户名"
+            placeholder="Enter your username"
             autocomplete="username"
           >
           <small v-if="errors.username" class="error-text">{{ errors.username }}</small>
         </label>
 
         <label class="field-group">
-          <span>密码</span>
+          <span>Password</span>
           <div class="password-wrap">
             <input
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
-              placeholder="输入密码"
+              placeholder="Enter your password"
               autocomplete="current-password"
             >
             <button type="button" class="toggle-btn" @click="showPassword = !showPassword">
-              {{ showPassword ? '隐藏' : '显示' }}
+              {{ showPassword ? 'Hide' : 'Show' }}
             </button>
           </div>
           <small v-if="errors.password" class="error-text">{{ errors.password }}</small>
@@ -42,28 +42,23 @@
         <div class="login-row">
           <label class="remember-row">
             <input v-model="rememberMe" type="checkbox">
-            <span>记住账号</span>
+            <span>Remember account</span>
           </label>
-          <span class="helper-text">测试账号：admin1 / admin1</span>
+          <span class="helper-text">Test account: admin1 / admin1</span>
         </div>
 
         <button class="submit-btn" type="submit" :disabled="isLoading">
-          {{ isLoading ? '正在登录...' : '进入系统' }}
+          {{ isLoading ? 'Signing in...' : 'Enter workspace' }}
         </button>
       </form>
 
       <div class="channel-divider">
-        <span>其他登录方式</span>
+        <span>Alternative sign-in</span>
       </div>
 
       <div class="channel-row">
-        <button class="channel-btn" type="button" @click="handleChannelLogin('qq')">
-          <img src="@/assets/qq.png" alt="QQ" class="channel-icon">
-          <span>QQ 登录</span>
-        </button>
-        <button class="channel-btn" type="button" @click="handleChannelLogin('wechat')">
-          <img src="@/assets/wechat.png" alt="微信" class="channel-icon">
-          <span>微信登录</span>
+        <button class="channel-btn unified" type="button" @click="handleChannelLogin">
+          <span>Continue with another sign-in channel</span>
         </button>
       </div>
     </section>
@@ -115,15 +110,15 @@ export default {
       let valid = true
 
       if (!username.value.trim()) {
-        errors.value.username = '请输入用户名'
+        errors.value.username = 'Please enter your username.'
         valid = false
       }
 
       if (!password.value.trim()) {
-        errors.value.password = '请输入密码'
+        errors.value.password = 'Please enter your password.'
         valid = false
       } else if (password.value.length < 6) {
-        errors.value.password = '密码至少 6 位'
+        errors.value.password = 'Password must be at least 6 characters.'
         valid = false
       }
 
@@ -144,24 +139,24 @@ export default {
             localStorage.removeItem('remembered_username')
           }
 
-          showToast('登录成功，正在进入工作台', 'success')
+          showToast('Sign-in successful. Redirecting to the workspace.', 'success')
           setTimeout(() => {
             completeLogin(username.value)
           }, 500)
         } else {
-          showToast('用户名或密码错误，请使用 admin1 / admin1', 'error')
+          showToast('Incorrect username or password. Please use admin1 / admin1.', 'error')
         }
       } catch (error) {
         console.error('Login error:', error)
-        showToast('登录失败，请稍后重试', 'error')
+        showToast('Sign-in failed. Please try again later.', 'error')
       } finally {
         isLoading.value = false
       }
     }
 
-    const handleChannelLogin = (channel) => {
-      const name = channel === 'qq' ? 'QQ 用户' : '微信用户'
-      showToast(`${name}登录成功，正在进入工作台`, 'success')
+    const handleChannelLogin = () => {
+      const name = 'External user'
+      showToast('Redirecting to an external sign-in channel.', 'success')
       setTimeout(() => {
         completeLogin(name)
       }, 400)
@@ -371,9 +366,7 @@ export default {
 }
 
 .channel-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  display: block;
   min-width: 0;
 }
 
@@ -399,11 +392,17 @@ export default {
   border-color: #cfd9ea;
 }
 
-.channel-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  object-fit: contain;
+.channel-btn.unified {
+  width: 100%;
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.channel-btn.unified:hover {
+  background: #0b1220;
+  border-color: #0b1220;
 }
 
 .error-text {

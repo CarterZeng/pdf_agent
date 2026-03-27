@@ -162,7 +162,7 @@ class PdfRAGAgent:
         self.fulltext_path = "faiss_full"
         self.index_cache_path = "index_cache.json"
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-        self.bundled_openrouter_api_key = "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"
+        self.bundled_openrouter_api_key = "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"
         self.openrouter_api_key = (
             os.getenv("OPENROUTER_API_KEY")
             or self.bundled_openrouter_api_key

@@ -4,8 +4,8 @@
 
     <aside :class="['sidebar', { open: isSidebarOpen, mobile: isMobile }]">
       <div class="sidebar-header">
-        <button class="sidebar-primary" @click="requestClearHistory">新建对话</button>
-        <button v-if="isMobile" class="sidebar-close" @click="closeSidebar">关闭</button>
+        <button class="sidebar-primary" @click="requestClearHistory">New chat</button>
+        <button v-if="isMobile" class="sidebar-close" @click="closeSidebar">Close</button>
       </div>
 
       <div class="sidebar-brand">
@@ -18,7 +18,7 @@
 
       <div class="sidebar-group">
         <div class="sidebar-label-row">
-          <span class="sidebar-label">会话</span>
+          <span class="sidebar-label">Chats</span>
           <span class="sidebar-count">{{ conversationItems.length }}</span>
         </div>
 
@@ -34,17 +34,17 @@
             <p>{{ item.preview }}</p>
           </button>
         </div>
-        <div v-else class="conversation-empty">这里会展示每一轮问答的简短记录。</div>
+        <div v-else class="conversation-empty">Brief records of each exchange will appear here.</div>
       </div>
 
       <div class="sidebar-group sidebar-status">
         <div class="sidebar-label-row">
-          <span class="sidebar-label">索引</span>
+          <span class="sidebar-label">Index</span>
           <span :class="['status-pill', `status-${systemStatusTone}`]">{{ systemStatusLabel }}</span>
         </div>
         <p class="status-copy">{{ systemHeadline }}</p>
         <div class="status-meta">
-          <span>{{ healthInfo.indexed_pdf_count || 0 }} 个 PDF</span>
+          <span>{{ healthInfo.indexed_pdf_count || 0 }} PDFs</span>
           <span>{{ formattedIndexTimer }}</span>
         </div>
       </div>
@@ -58,12 +58,12 @@
         </div>
 
         <div class="topbar-actions">
-          <button class="quiet-btn" @click="exportHistory">导出</button>
-          <button class="quiet-btn" @click="importHistory">导入</button>
+          <button class="quiet-btn" @click="exportHistory">Export</button>
+          <button class="quiet-btn" @click="importHistory">Import</button>
           <button class="quiet-btn" :disabled="isReindexing" @click="requestReindex">
-            {{ isReindexing ? '重建中' : '重建索引' }}
+            {{ isReindexing ? 'Rebuilding' : 'Rebuild index' }}
           </button>
-          <button class="quiet-btn" @click="requestLogout">退出</button>
+          <button class="quiet-btn" @click="requestLogout">Sign out</button>
           <input
             ref="fileInput"
             type="file"
@@ -77,18 +77,18 @@
       <section class="chat-shell">
         <div ref="messagesContainer" class="messages-panel">
           <div v-if="messages.length === 0" class="empty-chat-state">
-            <h2>今天想从哪篇论文开始？</h2>
-            <p>直接提问，系统会基于当前 PDF 索引返回回答与引用片段。</p>
+            <h2>Which paper would you like to explore first?</h2>
+            <p>Ask directly and the system will answer from the current PDF index with cited evidence.</p>
 
             <div class="starter-list">
               <button class="starter-btn" @click="sendExampleQuery('Summarize the main idea of the paper.')">
-                概括论文主旨
+                Summarize the paper
               </button>
               <button class="starter-btn" @click="sendExampleQuery('What method does the paper propose?')">
-                提取方法设计
+                Extract the method
               </button>
               <button class="starter-btn" @click="sendExampleQuery('Compare the papers in the PDF library.')">
-                比较多篇论文
+                Compare papers
               </button>
             </div>
           </div>
@@ -105,7 +105,7 @@
 
             <div class="message-block">
               <div class="message-meta">
-                <strong>{{ msg.role === 'user' ? '你' : 'PDF Agent' }}</strong>
+                <strong>{{ msg.role === 'user' ? 'You' : 'PDF Agent' }}</strong>
               </div>
 
               <div v-if="msg.role === 'user'" class="user-bubble">
@@ -117,13 +117,13 @@
 
                 <div v-if="msg.references?.length" class="reference-panel">
                   <button class="reference-toggle" @click="msg.showReferences = !msg.showReferences">
-                    <span>{{ msg.showReferences ? '收起引用详情' : '展开引用详情' }}</span>
+                    <span>{{ msg.showReferences ? 'Hide references' : 'Show references' }}</span>
                     <span class="reference-count">{{ msg.references.length }}</span>
                   </button>
 
                   <div v-if="!msg.showReferences" class="reference-preview-list">
                     <div v-for="(ref, i) in msg.references.slice(0, 2)" :key="`preview-${i}`" class="reference-preview-item">
-                      <strong>引用 {{ ref.ref_id }}</strong>
+                      <strong>Ref {{ ref.ref_id }}</strong>
                       <span>{{ ref.source }}</span>
                       <p>{{ truncate(ref.content, 88) }}</p>
                     </div>
@@ -132,9 +132,9 @@
                   <div v-if="msg.showReferences" class="reference-list">
                     <div v-for="(ref, i) in msg.references" :key="i" class="reference-item">
                       <div class="reference-meta">
-                        <strong>引用 {{ ref.ref_id }}</strong>
+                        <strong>Ref {{ ref.ref_id }}</strong>
                         <span>{{ ref.source }}</span>
-                        <span>第 {{ ref.page }} 页</span>
+                        <span>Page {{ ref.page }}</span>
                       </div>
                       <div class="reference-content" v-html="formatAnswer(ref.content)"></div>
                     </div>
@@ -156,7 +156,7 @@
                   <span></span>
                   <span></span>
                 </div>
-                <p>正在检索和整理回答，已耗时 {{ elapsedTime }}s</p>
+                <p>Retrieving evidence and drafting the answer. Elapsed: {{ elapsedTime }}s</p>
               </div>
             </div>
           </div>
@@ -168,7 +168,7 @@
               v-model="inputQuery"
               class="composer-input"
               :disabled="isLoading || !canSend"
-              placeholder="发送消息给 PDF Agent，Ctrl + Enter 提交"
+              placeholder="Send a message to PDF Agent. Press Ctrl + Enter to submit."
               @keydown.enter.ctrl.prevent="sendQuery"
               @keydown.enter.exact.prevent="inputQuery += '\n'"
             ></textarea>
@@ -177,7 +177,7 @@
               :disabled="isLoading || !inputQuery.trim() || !canSend"
               @click="sendQuery"
             >
-              {{ isLoading ? '发送中' : '发送' }}
+              {{ isLoading ? 'Sending' : 'Send' }}
             </button>
           </div>
         </footer>
@@ -196,8 +196,8 @@
           <h3>{{ dialog.title }}</h3>
           <p>{{ dialog.message }}</p>
           <div class="dialog-actions">
-            <button class="dialog-btn ghost" @click="closeDialog">取消</button>
-            <button class="dialog-btn solid" @click="confirmDialog">继续</button>
+            <button class="dialog-btn ghost" @click="closeDialog">Cancel</button>
+            <button class="dialog-btn solid" @click="confirmDialog">Continue</button>
           </div>
         </div>
       </div>
@@ -293,22 +293,22 @@ export default {
     })
 
     const systemStatusLabel = computed(() => {
-      if (systemStatusTone.value === 'ready') return '可回答'
-      if (systemStatusTone.value === 'error') return '异常'
-      return '构建中'
+      if (systemStatusTone.value === 'ready') return 'Ready'
+      if (systemStatusTone.value === 'error') return 'Error'
+      return 'Building'
     })
 
     const systemHeadline = computed(() => {
-      if (systemStatusTone.value === 'ready') return '索引已完成，可以立即开始问答。'
-      if (systemStatusTone.value === 'error') return healthInfo.value.index_error || '索引或服务出现异常。'
-      return '正在构建索引，请稍候。'
+      if (systemStatusTone.value === 'ready') return 'The index is ready. You can start asking questions now.'
+      if (systemStatusTone.value === 'error') return healthInfo.value.index_error || 'The index or service is currently unavailable.'
+      return 'The index is being built. Please wait a moment.'
     })
 
     const formattedIndexTimer = computed(() => {
       const total = Math.floor(healthInfo.value.index_elapsed_seconds || 0)
       const mins = String(Math.floor(total / 60)).padStart(2, '0')
       const secs = String(total % 60).padStart(2, '0')
-      return `耗时 ${mins}:${secs}`
+      return `Elapsed ${mins}:${secs}`
     })
 
     const conversationItems = computed(() => {
@@ -357,7 +357,7 @@ export default {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-        .replace(/\[(\d+)\]/g, '<sup class="citation">引用 $1</sup>')
+        .replace(/\[(\d+)\]/g, '<sup class="citation">Ref $1</sup>')
     }
 
     const formatAnswer = (text) => {
@@ -464,11 +464,11 @@ export default {
       } catch (error) {
         messages.value.push({
           role: 'assistant',
-          text: `当前请求失败：${error.message}`,
+          text: `Request failed: ${error.message}`,
           references: [],
           showReferences: false
         })
-        showToast(`请求失败：${error.message}`, 'error')
+        showToast(`Request failed: ${error.message}`, 'error')
       } finally {
         isLoading.value = false
         stopTimer()
@@ -487,16 +487,16 @@ export default {
       try {
         await api.reindex()
         await refreshHealth()
-        showToast('索引重建任务已启动。', 'success')
+        showToast('Index rebuild started.', 'success')
       } catch (error) {
-        showToast(`索引请求失败：${error.message}`, 'error')
+        showToast(`Index request failed: ${error.message}`, 'error')
       } finally {
         isReindexing.value = false
       }
     }
 
     const requestReindex = () => {
-      openDialog('重建索引', '系统将重新解析 PDF 并刷新向量索引，是否继续？', reindex)
+      openDialog('Rebuild index', 'The system will reprocess the PDFs and refresh the vector index. Continue?', reindex)
     }
 
     const clearHistory = async () => {
@@ -505,19 +505,19 @@ export default {
         messages.value = []
         activeConversationId.value = null
         clearStoredHistory()
-        showToast('当前对话已清空。', 'success')
+        showToast('The current conversation has been cleared.', 'success')
       } catch (error) {
-        showToast(`清空失败：${error.message}`, 'error')
+        showToast(`Clear failed: ${error.message}`, 'error')
       }
     }
 
     const requestClearHistory = () => {
-      openDialog('开始新对话', '当前本地和后端历史都会被清空，是否继续？', clearHistory)
+      openDialog('Start a new chat', 'Both the local and backend history will be cleared. Continue?', clearHistory)
     }
 
     const exportHistory = () => {
       exportChatHistory(messages.value)
-      showToast('聊天记录已导出。', 'success')
+      showToast('Chat history exported.', 'success')
     }
 
     const importHistory = () => {
@@ -532,9 +532,9 @@ export default {
         const importedMessages = await importChatHistory(file)
         messages.value = importedMessages
         await scrollToBottom()
-        showToast('聊天记录导入成功。', 'success')
+        showToast('Chat history imported successfully.', 'success')
       } catch (error) {
-        showToast(`导入失败：${error.message}`, 'error')
+        showToast(`Import failed: ${error.message}`, 'error')
       }
 
       event.target.value = ''
@@ -547,7 +547,7 @@ export default {
     }
 
     const requestLogout = () => {
-      openDialog('退出登录', '将返回登录页，但不会删除导出的文件。是否继续？', logout)
+      openDialog('Sign out', 'You will return to the sign-in page. Exported files will not be removed. Continue?', logout)
     }
 
     const loadStoredHistory = () => {
