@@ -7,7 +7,7 @@
         </div>
         <div>
           <p class="card-eyebrow">PDF Agent</p>
-          <h2>Sign in to the research console</h2>
+          <h2>Research Console</h2>
         </div>
       </div>
 
@@ -58,7 +58,7 @@
 
       <div class="channel-row">
         <button class="channel-btn unified" type="button" @click="handleChannelLogin">
-          <span>Continue with another sign-in channel</span>
+          <span>Continue with another channel</span>
         </button>
       </div>
     </section>

@@ -161,12 +161,9 @@ class PdfRAGAgent:
         self.abstract_path = "faiss_abstract"
         self.fulltext_path = "faiss_full"
         self.index_cache_path = "index_cache.json"
+        self.project_root = os.path.dirname(os.path.abspath(__file__))
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-        self.bundled_openrouter_api_key = "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"
-        self.openrouter_api_key = (
-            os.getenv("OPENROUTER_API_KEY")
-            or self.bundled_openrouter_api_key
-        )
+        self.openrouter_api_key = self.load_openrouter_api_key()
         self.openrouter_timeout = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60"))
         self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "420"))
         self.temperature = temperature
@@ -194,15 +191,35 @@ class PdfRAGAgent:
             max_retries=1,
         )
 
+    def load_openrouter_api_key(self) -> str:
+        env_key = os.getenv("OPENROUTER_API_KEY")
+        if env_key:
+            return env_key.strip()
+
+        secret_file = os.path.join(self.project_root, ".secrets", "openrouter_api_key.txt")
+        if os.path.exists(secret_file):
+            with open(secret_file, "r", encoding="utf-8") as fh:
+                key = fh.read().strip()
+            if key:
+                return key
+
+        env_file = os.path.join(self.project_root, ".env")
+        if os.path.exists(env_file):
+            with open(env_file, "r", encoding="utf-8") as fh:
+                for raw_line in fh:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    name, value = line.split("=", 1)
+                    if name.strip() == "OPENROUTER_API_KEY":
+                        return value.strip().strip("'\"")
+
+        raise RuntimeError(
+            "Missing OpenRouter API key. Set OPENROUTER_API_KEY or create .secrets/openrouter_api_key.txt."
+        )
+
     def _invoke_llm(self, messages):
-        try:
-            return self.llm.invoke(messages)
-        except AuthenticationError:
-            if self.openrouter_api_key == self.bundled_openrouter_api_key:
-                raise
-            self.openrouter_api_key = self.bundled_openrouter_api_key
-            self.llm = self._build_llm(self.openrouter_api_key)
-            return self.llm.invoke(messages)
+        return self.llm.invoke(messages)
 
     def get_indexed_pdf_count(self) -> int:
         cache = self.load_index_cache()

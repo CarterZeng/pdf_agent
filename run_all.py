@@ -17,14 +17,17 @@ ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = ROOT / "pdf-agent-frontend"
 FRONTEND_NODE_MODULES = FRONTEND_DIR / "node_modules"
 VENV_DIR = ROOT / ".venv"
+SECRET_KEY_FILE = ROOT / ".secrets" / "openrouter_api_key.txt"
 DEFAULT_FRONTEND_PORT = os.environ.get("PDF_AGENT_FRONTEND_PORT", "5173")
 DEFAULT_BACKEND_PORT = os.environ.get("PDF_AGENT_BACKEND_PORT", "8000")
 
 
 def ensure_openrouter_api_key() -> None:
-    if os.environ.get("OPENROUTER_API_KEY"):
+    if os.environ.get("OPENROUTER_API_KEY") or SECRET_KEY_FILE.exists() or (ROOT / ".env").exists():
         return
-    print("[warn] OPENROUTER_API_KEY not set. Falling back to the bundled project key.")
+    raise RuntimeError(
+        "Missing OpenRouter API key. Set OPENROUTER_API_KEY, add it to .env, or create .secrets/openrouter_api_key.txt."
+    )
 
 
 def resolve_venv_python() -> Path:
