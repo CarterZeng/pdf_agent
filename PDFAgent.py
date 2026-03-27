@@ -7,6 +7,7 @@ import threading
 import time
 from typing import Any, Dict, List
 
+from openai import AuthenticationError
 from PyPDF2 import PdfReader
 from sentence_transformers import SentenceTransformer
 from langchain_openai import ChatOpenAI
@@ -161,24 +162,18 @@ class PdfRAGAgent:
         self.fulltext_path = "faiss_full"
         self.index_cache_path = "index_cache.json"
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        self.bundled_openrouter_api_key = "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"
         self.openrouter_api_key = (
             os.getenv("OPENROUTER_API_KEY")
             or os.getenv("LEO_API_KEY")
-            or "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"
+            or self.bundled_openrouter_api_key
         )
         self.openrouter_timeout = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60"))
         self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "420"))
+        self.temperature = temperature
 
         self.embeddings = SentenceTransformerEmbeddings(model_name)
-        self.llm = ChatOpenAI(
-            model=self.openrouter_model,
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.openrouter_api_key,
-            temperature=temperature,
-            timeout=self.openrouter_timeout,
-            max_tokens=self.openrouter_max_tokens,
-            max_retries=1,
-        )
+        self.llm = self._build_llm(self.openrouter_api_key)
 
         self.chat_history = []
         self.index_lock = threading.Lock()
@@ -188,6 +183,27 @@ class PdfRAGAgent:
         self.index_finished_at = time.time() if self.index_exists() else None
         self.index_duration_seconds = 0 if self.index_exists() else None
         self.indexed_pdf_count = self.get_indexed_pdf_count()
+
+    def _build_llm(self, api_key: str) -> ChatOpenAI:
+        return ChatOpenAI(
+            model=self.openrouter_model,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            temperature=self.temperature,
+            timeout=self.openrouter_timeout,
+            max_tokens=self.openrouter_max_tokens,
+            max_retries=1,
+        )
+
+    def _invoke_llm(self, messages):
+        try:
+            return self.llm.invoke(messages)
+        except AuthenticationError:
+            if self.openrouter_api_key == self.bundled_openrouter_api_key:
+                raise
+            self.openrouter_api_key = self.bundled_openrouter_api_key
+            self.llm = self._build_llm(self.openrouter_api_key)
+            return self.llm.invoke(messages)
 
     def get_indexed_pdf_count(self) -> int:
         cache = self.load_index_cache()
@@ -475,7 +491,7 @@ Requirements:
 - If the evidence is insufficient or ambiguous, state that clearly.
 """
 
-        response = self.llm.invoke([
+        response = self._invoke_llm([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ])

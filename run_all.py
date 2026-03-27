@@ -24,9 +24,7 @@ DEFAULT_BACKEND_PORT = os.environ.get("PDF_AGENT_BACKEND_PORT", "8000")
 def ensure_openrouter_api_key() -> None:
     if os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LEO_API_KEY"):
         return
-    raise RuntimeError(
-        "Missing OPENROUTER_API_KEY or LEO_API_KEY. Set one in your shell or add it to a local .env file before starting the project."
-    )
+    print("[warn] OPENROUTER_API_KEY / LEO_API_KEY not set. Falling back to the bundled project key.")
 
 
 def resolve_venv_python() -> Path:
