@@ -1,5 +1,17 @@
+function getDefaultApiBaseUrl() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    return `http://${window.location.hostname}:8000`
+  }
+
+  return 'http://127.0.0.1:8000'
+}
+
 // API 基础 URL 配置
-let API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+let API_BASE_URL = getDefaultApiBaseUrl()
 
 /**
  * API 客户端 - 处理所有后端通信

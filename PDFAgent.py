@@ -161,6 +161,11 @@ class PdfRAGAgent:
         self.fulltext_path = "faiss_full"
         self.index_cache_path = "index_cache.json"
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        self.openrouter_api_key = (
+            os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("LEO_API_KEY")
+            or "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"
+        )
         self.openrouter_timeout = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "60"))
         self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "420"))
 
@@ -168,7 +173,7 @@ class PdfRAGAgent:
         self.llm = ChatOpenAI(
             model=self.openrouter_model,
             base_url="https://openrouter.ai/api/v1",
-            api_key="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",
+            api_key=self.openrouter_api_key,
             temperature=temperature,
             timeout=self.openrouter_timeout,
             max_tokens=self.openrouter_max_tokens,
@@ -182,7 +187,15 @@ class PdfRAGAgent:
         self.index_started_at = None
         self.index_finished_at = time.time() if self.index_exists() else None
         self.index_duration_seconds = 0 if self.index_exists() else None
-        self.indexed_pdf_count = 0
+        self.indexed_pdf_count = self.get_indexed_pdf_count()
+
+    def get_indexed_pdf_count(self) -> int:
+        cache = self.load_index_cache()
+        if cache:
+            return len(cache)
+        if os.path.exists(self.pdfs_folder):
+            return len([f for f in os.listdir(self.pdfs_folder) if f.endswith(".pdf")])
+        return 0
 
     def extract_abstract(self, text: str) -> str | None:
         pattern = r"Abstract(.*?)(Introduction|1\.|I\.)"
@@ -297,7 +310,13 @@ class PdfRAGAgent:
         self.indexed_pdf_count = len(pdf_files)
 
     def index_exists(self) -> bool:
-        return os.path.exists(self.fulltext_path) and os.path.exists(self.abstract_path)
+        required_files = [
+            os.path.join(self.abstract_path, "index.faiss"),
+            os.path.join(self.abstract_path, "index.pkl"),
+            os.path.join(self.fulltext_path, "index.faiss"),
+            os.path.join(self.fulltext_path, "index.pkl"),
+        ]
+        return all(os.path.exists(path) for path in required_files)
 
     def ensure_index_ready(self) -> None:
         if self.index_status == "building":
