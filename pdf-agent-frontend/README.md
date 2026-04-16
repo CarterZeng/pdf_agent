@@ -1,5 +1,37 @@
-# Vue 3 + Vite
+# PDF Agent Frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This directory contains the Vue 3 + Vite interface for PDF Agent, an academic PDF question-answering system based on retrieval-augmented generation.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Features
+
+- Research workspace for asking questions about indexed academic PDFs
+- Evidence panel showing retrieved references and page numbers
+- Index health display and reindex control
+- Local chat history with import and export
+- Demonstration login flow for classroom or project presentation use
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the frontend against a local backend:
+
+```bash
+VITE_API_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Build production assets:
+
+```bash
+npm run build
+```
+
+The full project can also be launched from the repository root with:
+
+```bash
+python3 run_all.py
+```

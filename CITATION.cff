@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "PDF Agent: Academic PDF Question Answering System Based on Retrieval-Augmented Generation"
+authors:
+  - family-names: "Zeng"
+    given-names: "Carter"
+repository-code: "https://github.com/CarterZeng/pdf_agent"
+keywords:
+  - "retrieval-augmented generation"
+  - "academic PDF question answering"
+  - "scholarly document processing"
+  - "FAISS"
+  - "dense retrieval"
+abstract: "PDF Agent is an academic question-answering system for scholarly PDF collections using PDF text extraction, FAISS-based dense retrieval, and citation-grounded answer generation."
